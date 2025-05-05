@@ -126,16 +126,19 @@ public class VideoId
 
     public static async Task<string> TryGetYouTubeVideoId(string url)
     {
+        var additionalArgs = ConfigManager.Config.ytdlAdditionalArgs;
         var process = new Process
         {
             StartInfo =
             {
                 FileName = ConfigManager.Config.ytdlPath,
-                Arguments = $"--no-playlist --no-warnings -j {url}",
+                Arguments = $"--encoding utf-8 --no-playlist --no-warnings {additionalArgs} -j {url}",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             }
         };
         process.Start();
@@ -174,7 +177,9 @@ public class VideoId
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             }
         };
 
@@ -183,8 +188,10 @@ public class VideoId
         if (ConfigManager.Config.ytdlGeneratePoToken)
             poToken = await PoTokenGenerator.GetPoToken();
         if (!string.IsNullOrEmpty(poToken))
+        {
             poToken = $"po_token=web.player+{poToken}";
-        
+        }
+
         var additionalArgs = ConfigManager.Config.ytdlAdditionalArgs;
         var isYouTube = IsYouTubeUrl(url);
         // TODO: safety check for escaping strings
@@ -192,30 +199,33 @@ public class VideoId
         {
             if (isYouTube)
                 process.StartInfo.Arguments =
-                    $"-f (mp4/best)[height<=?1080][height>=?64][width>=?64] --impersonate=\"safari\" --extractor-args=\"youtube:player_client=web;{poToken}\" --no-playlist --no-warnings {additionalArgs} --get-url {url}";
+                    $"--encoding utf-8 -f \"(mp4/best)[height<=?1080][height>=?64][width>=?64]\" --impersonate=\"safari\" --extractor-args=\"youtube:player_client=web;{poToken}\" --no-playlist --no-warnings {additionalArgs} --get-url {url}";
             else
                 process.StartInfo.Arguments =
-                    $"-f (mp4/best)[height<=?1080][height>=?64][width>=?64] --extractor-args=\"youtube:{poToken}\" --no-playlist --no-warnings {additionalArgs} --get-url {url}";
+                    $"--encoding utf-8 -f \"(mp4/best)[height<=?1080][height>=?64][width>=?64]\" --extractor-args=\"youtube:{poToken}\" --no-playlist --no-warnings {additionalArgs} --get-url {url}";
         }
         else
         {
             process.StartInfo.Arguments =
-                $"-f (mp4/best)[vcodec!=av01][vcodec!=vp9.2][height<=?1080][height>=?64][width>=?64][protocol^=http] --extractor-args=\"youtube:{poToken}\" --no-playlist --no-warnings {additionalArgs} --get-url {url}";
+                $"--encoding utf-8 -f \"(mp4/best)[vcodec!=av01][vcodec!=vp9.2][height<=?1080][height>=?64][width>=?64][protocol^=http]\" --extractor-args=\"youtube:{poToken}\" --no-playlist --no-warnings {additionalArgs} --get-url {url}";
         }
         
         process.Start();
+
         var output = await process.StandardOutput.ReadToEndAsync();
         output = output.Trim();
         var error = await process.StandardError.ReadToEndAsync();
         error = error.Trim();
         await process.WaitForExitAsync();
         
-        if (output.StartsWith("WARNING: ") ||
-            output.StartsWith("ERROR: "))
+        Log.Information("Started yt-dlp with args: {args}", process.StartInfo.Arguments);
+
+        if (error.StartsWith("WARNING: ") ||
+            error.StartsWith("ERROR: "))
         {
-            Log.Error("YouTube Get URL: {output}", output);
+            Log.Error("YouTube Get URL: {error}", error);
             if (ConfigManager.Config.ytdlGeneratePoToken &&
-                output.Contains("Sign in to confirm you’re not a bot") &&
+                error.Contains("Sign in to confirm you’re not a bot") &&
                 !isRetry)
             {
                 await PoTokenGenerator.GeneratePoToken();
